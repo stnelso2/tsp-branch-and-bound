@@ -11,47 +11,61 @@ namespace TSP
 {
     class BbSolver
     {
-        //need a priority queue of states. 
-        //need a reduced cost matrix
-        //need a state object 
         ReducedCostMatrix rcm;
         TSPState bssf = null;
 
         public BbSolver(City[] cities, ArrayList route, double bssfCost)
         {
+            //this is my best solution so far, which is the greedy one. 
             bssf = new TSPState(route, bssfCost);
            
         }
 
         public ArrayList solve(City[] cities, int time_limit)
         {
+            //initialize counting variables
             int validRoutesCount = 0;
+            int prunedBranches = 0;
+            int statesCreated = 0;
+            //initialize reults array
             ArrayList results = new ArrayList();
             TSPState currentNode;
             Stopwatch timer = new Stopwatch();
+            //initialize priority queue
             BbPriorityQueue pq = new BbPriorityQueue(cities.Length);
+            //initialize first TSPState
             currentNode = new TSPState(new ReducedCostMatrix(cities), cities[0], 0, cities.Length);
+            statesCreated++;
+            //Add it if it's viable. 
             if(currentNode.BssfCost < bssf.BssfCost)
                 pq.Add(currentNode);
 
             timer.Start();
+            //go until the pq is empty
             while (!pq.Empty()) 
             {
+                //if time runs out, stop
                 if (timer.ElapsedMilliseconds > time_limit)
                     break;
 
+                //get the next node
                 currentNode = pq.DeleteMin();
+                //if the route I pull off is no longer viable, prune it and go to the next one
                 if (currentNode.BssfCost >= bssf.BssfCost)
                 {
+                    prunedBranches++;
                     pq.pruneCurrentPath();
                     continue;
                 }
+                //if we have visited all the cities
                 if (currentNode.route.Count == cities.Length)
                 {
+                    //make sure we can get to the first city again.
                     double costToStart = currentNode.city.costToGetTo(cities[0]);
                     if (costToStart != double.PositiveInfinity)
                     {
                         validRoutesCount++;
+                        //if the total cost is less than the current best, set the currentNode as the current best. 
                         if(currentNode.currentCost + costToStart < bssf.currentCost)
                         {
                             currentNode.currentCost += costToStart;
@@ -60,21 +74,32 @@ namespace TSP
                     }
                 }
 
+                //create states for every possible city to visit 
                 for (int i = 0; i < cities.Length; i++)
                 {
+                    //skip the loop if we've already visited it on this path
                     if (currentNode.Visited.Contains(i))
                         continue;
+                    //make sure we can reach the city
                     double costToI = currentNode.city.costToGetTo(cities[i]);
                     if (!double.PositiveInfinity.Equals(costToI)) { 
+                        //create the node
                         TSPState iNode = new TSPState(currentNode, costToI, i, cities[i], cities.Length);
+                        statesCreated++;
+                        //if it's still viable add it to the queu
                         if (iNode.BssfCost < bssf.BssfCost)
                         {
                             pq.Add(iNode);
+                        }
+                        else
+                        {
+                            prunedBranches++;
                         }
                     }
                 }
             }
             timer.Stop();
+            //set the results
             results.Add(bssf.route);
             results.Add(timer.Elapsed.ToString());
             results.Add(validRoutesCount.ToString());
@@ -85,11 +110,8 @@ namespace TSP
 
     class TSPState
     {
+        //state object to hold the properties that are current to a state
         private ReducedCostMatrix rcm;
-        public string parentPath {
-            get;
-        }
-        private TSPState previousState;
         public double currentCost {
             get; set;
         }
@@ -101,10 +123,6 @@ namespace TSP
             get;
         }
         public int Node
-        {
-            get;
-        }
-        public int Length
         {
             get;
         }
@@ -128,15 +146,12 @@ namespace TSP
         public TSPState(TSPState previousState, double extraCost, int node, City city, int citiesSize)
         {
             Node = node;
-            this.previousState = previousState;
-            parentPath = previousState.parentPath + previousState.Node;
             this.city = city;
             currentCost = previousState.currentCost + extraCost;
             Visited = new HashSet<int>(previousState.Visited);
             Visited.Add(node);
             rcm = new ReducedCostMatrix(previousState.rcm, citiesSize);
             BssfCost = rcm.updateRCM(previousState.Node, node, citiesSize) + previousState.BssfCost;
-            Length = previousState.Length + 1;
             route = (ArrayList)previousState.route.Clone();
             route.Add(city);
         }
@@ -145,13 +160,10 @@ namespace TSP
         {
             this.rcm = rcm;
             BssfCost = rcm.computeLowerBound(citiesSize);
-            previousState = null;
-            parentPath = "";
             this.city = city;
             Node = node;
             Visited = new HashSet<int>();
             Visited.Add(node);
-            Length = 1;
             route = new ArrayList();
             route.Add(city);
         }
@@ -172,19 +184,22 @@ namespace TSP
            Array.Copy(rcm.Matrix, Matrix, rcm.Matrix.Length);
         }
 
+        //initialize the rcm 
         public ReducedCostMatrix(City[] cities)
         {
             Matrix = new double[cities.Length, cities.Length];
+            //loop through all the rows and columns
             for(int i = 0; i<cities.Length; i++)
             {
                 for(int j=0; j<cities.Length; j++)
                 {
+                    //if i=j, set the value to infinity
                     if (j == i)
                     {
                         Matrix[i, j] = double.PositiveInfinity;
                     }
                     else
-                    {
+                    {//otherwise set the value to the cost to get to that city
                         Matrix[i, j] = cities[i].costToGetTo(cities[j]);
                     }
                 }
@@ -194,9 +209,11 @@ namespace TSP
         public double computeLowerBound(int citiesSize)
         {
             double lowerBound = 0;
+            //loop through all the rows and subtract the smallest value to 0
             for (int j = 0; j < citiesSize; j++)
             {
                 int smallestEntry = 0;
+                //find the smallestEntry
                 for (int i = 1; i < citiesSize; i++)
                 {
                     if (Matrix[i, j] < Matrix[smallestEntry, j])
@@ -204,6 +221,7 @@ namespace TSP
                         smallestEntry = i;
                     }
                 }
+                //subtract it from each position in the row, and add the value to the lowerBound
                 double entryValue = Matrix[smallestEntry, j];
                 if (!double.PositiveInfinity.Equals(entryValue))
                 {
@@ -214,7 +232,7 @@ namespace TSP
                     }
                 }
             }
-            //columns
+            //columns, same thing as rows.
             for(int i=0; i<citiesSize; i++)
             {
                 int smallestEntry = 0;
@@ -240,6 +258,7 @@ namespace TSP
 
         public double updateRCM(int startIndex, int endIndex, int citiesSize)
         {
+            //set all values along row and column to be infinity, then compute the lowerBound again. 
             double extraCost = Matrix[startIndex, endIndex];
             for(int i=0; i<citiesSize; i++)
             {

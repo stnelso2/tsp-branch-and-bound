@@ -12,8 +12,15 @@ namespace TSP
     class ProblemAndSolver
     {
 
-        private class TSPSolution
+        public class TSPSolution: IComparable
         {
+
+
+            public TSPSolution(TSPSolution solution)
+            {
+                this.Route = (ArrayList)solution.Route.Clone();
+                this.cost = solution.cost;
+            }
             /// <summary>
             /// we use the representation [cityB,cityA,cityC] 
             /// to mean that cityB is the first city in the solution, cityA is the second, cityC is the third 
@@ -24,6 +31,11 @@ namespace TSP
             public ArrayList
                 Route;
 
+            public double cost
+            {
+                get; set;
+            }
+
             /// <summary>
             /// constructor
             /// </summary>
@@ -31,6 +43,7 @@ namespace TSP
             public TSPSolution(ArrayList iroute)
             {
                 Route = new ArrayList(iroute);
+                cost = costOfRoute();
             }
 
             /// <summary>
@@ -41,10 +54,11 @@ namespace TSP
             /// <returns></returns>
             public double costOfRoute()
             {
+                
                 // go through each edge in the route and add up the cost. 
                 int x;
                 City here;
-                double cost = 0D;
+                cost = 0D;
 
                 for (x = 0; x < Route.Count - 1; x++)
                 {
@@ -56,6 +70,23 @@ namespace TSP
                 here = Route[Route.Count - 1] as City;
                 cost += here.costToGetTo(Route[0] as City);
                 return cost;
+            }
+
+            public int CompareTo(Object obj)
+            {
+                if (obj == null) return 1;
+
+                TSPSolution otherSoln = obj as TSPSolution;
+
+                if(otherSoln != null)
+                {
+                    return this.cost.CompareTo(otherSoln.cost);
+                }
+                else
+                {
+                    throw new ArgumentException("Object is not a TSPSolution");
+                }
+                
             }
         }
 
@@ -324,12 +355,17 @@ namespace TSP
                 return -1D; 
         }
 
+        public string[] defaultSolveProblem()
+        {
+            return defaultSolveProblem(new SortedSet<TSPSolution>());
+        }
+
         /// <summary>
         /// This is the entry point for the default solver
         /// which just finds a valid random tour 
         /// </summary>
         /// <returns>results array for GUI that contains three ints: cost of solution, time spent to find solution, number of solutions found during search (not counting initial BSSF estimate)</returns>
-        public string[] defaultSolveProblem()
+        public string[] defaultSolveProblem(SortedSet<TSPSolution> population)
         {
             int i, swap, temp, count=0;
             string[] results = new string[3];
@@ -362,6 +398,7 @@ namespace TSP
                 count++;
             } while (costOfBssf() == double.PositiveInfinity);                // until a valid route is found
             timer.Stop();
+            population.Add(bssf);
 
             results[COST] = costOfBssf().ToString();                          // load results array
             results[TIME] = timer.Elapsed.ToString();
@@ -380,16 +417,22 @@ namespace TSP
             string[] results = new string[3];
 
             // TODO: Add your implementation for a branch and bound solver here.
-            greedySolveProblem();
-            BbSolver solver = new BbSolver(Cities, bssf.Route, bssf.costOfRoute());
-            ArrayList solution = solver.solve(Cities, time_limit);
+            greedySolveProblem();//solve the initial path with the greedy solver
+            BbSolver solver = new BbSolver(Cities, bssf.Route, bssf.costOfRoute());//pass in the greedy route with the cost and the cities.
+            ArrayList solution = solver.solve(Cities, time_limit);//solves the problem with branch and bound
+            //set results.
             Route = (ArrayList)solution[0];
             bssf = new TSPSolution(Route);
-            results[COST] = bssf.costOfRoute().ToString();    // load results into array here, replacing these dummy values
+            results[COST] = bssf.costOfRoute().ToString();   
             results[TIME] = (String) solution[1];
             results[COUNT] = (String) solution[2];
 
             return results;
+        }
+
+        public string[] greedySolveProblem()
+        {
+            return greedySolveProblem(new SortedSet<TSPSolution>());
         }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
@@ -400,32 +443,35 @@ namespace TSP
         /// finds the greedy tour starting from each city and keeps the best (valid) one
         /// </summary>
         /// <returns>results array for GUI that contains three ints: cost of solution, time spent to find solution, number of solutions found during search (not counting initial BSSF estimate)</returns>
-        public string[] greedySolveProblem()
+        public string[] greedySolveProblem(SortedSet<TSPSolution> population)
         {
             string[] results = new string[3];
-            // TODO: Add your implementation for a greedy solver here.
             bssf = null;
             double bssfCost = Double.PositiveInfinity;
             int validRouteCount = 0;
             Stopwatch timer = new Stopwatch();
 
             timer.Start();
-
+            //loop through every city, and use it as a starting point
             for (int i=0; i<Cities.Length; i++)
             {
                 if (timer.ElapsedMilliseconds > time_limit)
                     break;
+                //initialize varialbe
                 HashSet<int> visited = new HashSet<int>();
                 visited.Add(i);
                 int start = i;
                 int current = i;
                 Route = new ArrayList();
+                //add the current city
                 Route.Add(Cities[current]);
                 bool validRoute = true;
+                //start the while loop to find a complete path for the starting city
                 do
                 {
                     int currentBest = -1;
                     double currentBestCost = Double.PositiveInfinity;
+                    //find the best cost destination
                     for (int j = 0; j < Cities.Length; j++)
                     {
                         if (visited.Contains(j))
@@ -437,13 +483,14 @@ namespace TSP
                             currentBestCost = costToJ;
                         }
                     }
+                    //if it didn't find a city to visit
                     if(currentBest == -1)
                     {
                         break;
                         validRoute = false;
                     }
                     else
-                    {
+                    {//if it did find a city to visit
                         current = currentBest;
                         Route.Add(Cities[current]);
                         visited.Add(current);
@@ -451,26 +498,25 @@ namespace TSP
 
 
                 } while (Route.Count < Cities.Length);
-                if(validRoute && Cities[current].costToGetTo(Cities[start]) != double.PositiveInfinity)
-                {
-                    
-                }
-                else
+                //if the starting city is not reachable
+                if(Cities[current].costToGetTo(Cities[start]) == double.PositiveInfinity)
                 {
                     validRoute = false;
                 }
-
                 if (validRoute)
-                {
+                {//if it found a valid route, compare it to the current one and swap if it's better
                     validRouteCount++;
                     if (bssf == null)
                     {
                         bssf = new TSPSolution(Route);
+                        population.Add(bssf);
                     }
                     else
-                    {
+                    {//
                         TSPSolution currentSolution = new TSPSolution(Route);
+                        population.Add(currentSolution);
                         double currentSolutionCost = currentSolution.costOfRoute();
+                        //swap if the current solution is better
                         if(currentSolutionCost < bssfCost)
                         {
                             bssf = currentSolution;
@@ -481,7 +527,7 @@ namespace TSP
             }
             timer.Stop();
 
-            results[COST] = bssfCost.ToString();    // load results into array here, replacing these dummy values
+            results[COST] = bssfCost.ToString();    // load results into array 
             results[TIME] = timer.Elapsed.ToString();
             results[COUNT] = validRouteCount.ToString();
 
@@ -494,15 +540,194 @@ namespace TSP
         public string[] fancySolveProblem()
         {
             string[] results = new string[3];
+            int populationCount = 50;
+            SortedSet<TSPSolution> population = new SortedSet<TSPSolution>();
+            greedySolveProblem(population);
+            while(population.Count < populationCount)
+            {
+                defaultSolveProblem(population);
+            }
+            Stopwatch timer = new Stopwatch();
+            timer.Start();
 
-            // TODO: Add your implementation for your advanced solver here.
+            //bool done = false;
+            while (timer.ElapsedMilliseconds < time_limit)
+            {
+                TSPSolution[] parents = chooseParents(population);
+                TSPSolution[] children = crossover(parents);
+                population.Add(children[0]);
+                population.Add(children[1]);
+                mutation(population);
+                prune(population, populationCount);
+            }
+            timer.Stop();
+            
+            foreach(TSPSolution solution in population)
+            {
+                if(solution.cost < bssf.cost)
+                {
+                    bssf = solution;
+                }
+            }
 
-            results[COST] = "not implemented";    // load results into array here, replacing these dummy values
-            results[TIME] = "-1";
+            
+
+            results[COST] = bssf.cost.ToString();    // load results into array here, replacing these dummy values
+            results[TIME] = timer.Elapsed.ToString();
             results[COUNT] = "-1";
 
             return results;
         }
+
+        private TSPSolution[] chooseParents(SortedSet<TSPSolution> population)
+        {
+            TSPSolution[] parents = new TSPSolution[2];
+            Random random = new Random();
+            int parent = 0;
+            foreach(TSPSolution solution in population)
+            {
+                //if(random.Next(4) != 0)
+                //{
+                    parents[parent] = solution;
+                    parent++;
+                    if (parent == 2) break;
+                //}
+            }
+
+            return parents;
+        }
+
+        private TSPSolution[] crossover(TSPSolution[] parents)
+        {
+            TSPSolution[] children = new TSPSolution[2];
+            Random random = new Random();
+            bool valid = false;
+            while (!valid)
+            {
+                int index1 = random.Next(Cities.Length);
+                int index2 = random.Next(Cities.Length);
+                while (index2 == index1)
+                {
+                    index2 = random.Next(Cities.Length);
+                }
+                if(index2 < index1)
+                {
+                    int temp = index1;
+                    index1 = index2;
+                    index2 = index1;
+                }
+
+                TSPSolution parent1 = parents[0];
+                TSPSolution parent2 = parents[1];
+                City[] child1 = new City[Cities.Length];
+                City[] child2 = new City[Cities.Length];
+                HashSet<City> visited1 = new HashSet<City>();
+                HashSet<City> visited2 = new HashSet<City>();
+                for(int i=index1; i<= index2; i++)
+                {
+                    child1[i] = (City)parent1.Route[i];
+                    visited1.Add(child1[i]);
+                    child2[i] = (City)parent2.Route[i];
+                    visited2.Add(child2[i]);
+                }
+                int child1Index = 0;
+                int child2Index = 0;
+                for(int i=0; i<Cities.Length; i++)
+                {
+                    if (child1Index == index1)
+                    {
+                        child1Index = index2 + 1;
+                    }
+                    if(!visited1.Contains((City)parent2.Route[i]))
+                    {
+                        child1[child1Index] = (City)parent2.Route[i];
+                        child1Index++;
+                    }
+
+                    if(child2Index == index1)
+                    {
+                        child2Index = index2 + 1;
+                    }
+                    if (!visited2.Contains((City)parent1.Route[i]))
+                    {
+                        child2[child2Index] = (City)parent1.Route[i];
+                        child2Index++;
+                    }
+                }
+
+                TSPSolution child1Solution = new TSPSolution(new ArrayList(child1));
+                TSPSolution child2Solution = new TSPSolution(new ArrayList(child2));
+                
+                if (child1Solution.cost != double.PositiveInfinity && child2Solution.cost != double.PositiveInfinity)
+                {
+                    valid = true;
+                    children[0] = child1Solution;
+                    children[1] = child2Solution;
+                }
+            }
+            return children;
+        }
+
+        private void mutation(SortedSet<TSPSolution> population)
+        {
+            Random random = new Random();
+            foreach(TSPSolution solution in population)
+            {
+                if(random.Next(population.Count) == 0)
+                {
+                    mutate(solution);
+                }
+            }
+        }
+
+        private void mutate(TSPSolution solution)
+        {
+            bool valid = false;
+            Random random = new Random();
+            TSPSolution mutation  = null;
+            while (!valid)
+            {
+                int index1 = random.Next(Cities.Length);
+                int index2 = random.Next(Cities.Length);
+                while(index1 == index2)
+                {
+                    index2 = random.Next(Cities.Length);
+                }
+                City temp = (City)solution.Route[index1];
+                solution.Route[index1] = solution.Route[index2];
+                solution.Route[index2] = temp;
+                if(solution.costOfRoute() != double.PositiveInfinity)
+                {
+                    valid = true;
+                }
+                else
+                {
+                    temp = (City)solution.Route[index1];
+                    solution.Route[index1] = solution.Route[index2];
+                    solution.Route[index2] = temp;
+                }
+            }
+        }
+
+        private void prune(SortedSet<TSPSolution> population, int populationCount)
+        {
+            List<TSPSolution> toRemoveList = new List<TSPSolution>();
+            Random random = new Random();
+            foreach(TSPSolution solution in population.Reverse())
+            {
+                //if(random.Next(4) != 0)
+                //{
+                    toRemoveList.Add(solution);
+                //}
+                if (population.Count - toRemoveList.Count <= populationCount) break;
+            }
+            foreach(TSPSolution solution in toRemoveList)
+            {
+                population.Remove(solution);
+            }
+        }
+
+       
         #endregion
     }
 
